@@ -1195,7 +1195,7 @@ tcp_receive(struct tcp_pcb *pcb)
          and a round-trip shouldn't be that long... */
       m = (s16_t)(tcp_ticks - pcb->rttest);
 
-      LWIP_DEBUGF(TCP_RTO_DEBUG, ("tcp_receive: experienced rtt %"U16_F" ticks (%"U16_F" msec).\n",
+      LWIP_DEBUGF(TCP_RTO_DEBUG, ("tcp_receive: experienced rtt %"U16_F" ticks (%"U32_F" msec).\n",
                                   m, m * TCP_SLOW_INTERVAL));
 
       /* This is taken directly from VJs original code in his paper */
@@ -1208,7 +1208,7 @@ tcp_receive(struct tcp_pcb *pcb)
       pcb->sv += m;
       pcb->rto = (pcb->sa >> 3) + pcb->sv;
 
-      LWIP_DEBUGF(TCP_RTO_DEBUG, ("tcp_receive: RTO %"U16_F" (%"U16_F" milliseconds)\n",
+      LWIP_DEBUGF(TCP_RTO_DEBUG, ("tcp_receive: RTO %"U16_F" (%"U32_F" milliseconds)\n",
                                   pcb->rto, pcb->rto * TCP_SLOW_INTERVAL));
 
       pcb->rttest = 0;

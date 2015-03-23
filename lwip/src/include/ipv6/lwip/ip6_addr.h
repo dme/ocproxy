@@ -262,14 +262,14 @@ Little-endian version, stored in network order (no htonl). */
 
 #define ip6_addr_debug_print(debug, ipaddr) \
   LWIP_DEBUGF(debug, ("%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F, \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK1(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK2(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK3(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK4(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK5(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK6(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK7(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK8(ipaddr) : 0))
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK1(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK2(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK3(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK4(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK5(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK6(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK7(ipaddr) : 0), \
+                      (u16_t)(ipaddr != NULL ? IP6_ADDR_BLOCK8(ipaddr) : 0)))
 
 #define IP6ADDR_STRLEN_MAX    46
 
