@@ -50,6 +50,7 @@
 #include "lwip/err.h"
 #include "lwip/init.h"
 #include "lwip/ip_addr.h"
+#include "lwip/ip6_addr.h"
 #include "lwip/dns.h"
 #include "lwip/netif.h"
 #include "lwip/stats.h"
@@ -103,6 +104,7 @@ struct ocp_sock {
 	/* general */
 	int fd;
 	struct evconnlistener *listener;
+	struct evconnlistener *listener6;
 	struct event *ev;
 	struct tcp_pcb *tpcb;
 	int state;
@@ -122,7 +124,7 @@ struct ocp_sock {
 
 	/* for port forwarding */
 	char *rhost_name;
-	ip_addr_t rhost;
+	ipX_addr_t rhost;
 	int rport;
 
 	/* for lwip_data_cb() */
@@ -389,7 +391,7 @@ static void socks_reply(struct ocp_sock *s, int rep)
 	rsp.atyp = SOCKS_ATYP_IPV4;
 
 	if (rep == 0 && s->tpcb) {
-		rsp.bnd_addr = htonl(s->tpcb->local_ip.addr);
+		rsp.bnd_addr = htonl(s->tpcb->local_ip.ip4.addr);
 		rsp.bnd_port = htons(s->tpcb->local_port);
 	}
 	if (write(s->fd, &rsp, sizeof(rsp)) != sizeof(rsp))
@@ -572,17 +574,17 @@ static void enqueue_dns_req(struct ocp_sock *s, const char *hostname,
 	err_t err;
 
 	if (!domain)
-		err = dns_gethostbyname(hostname, &s->rhost, found, s);
+		err = dns_gethostbyname(hostname, &s->rhost.ip4, found, s);
 	else {
 		/* sockbuf is just scratch space */
 		snprintf(s->sockbuf, SOCKBUF_LEN, "%s.%s", hostname, dns_domain);
-		err = dns_gethostbyname(s->sockbuf, &s->rhost, found, s);
+		err = dns_gethostbyname(s->sockbuf, &s->rhost.ip4, found, s);
 	}
 
 	if (err == ERR_INPROGRESS)
 		return;
 	else if (err == ERR_OK)
-		start_connection(s, &s->rhost);
+		start_connection(s, &s->rhost.ip4);
 	else if (err == ERR_MEM) {
 		warn("%s: DNS table full, aborting lookup\n", __func__);
 		found(hostname, NULL, s);
@@ -800,6 +802,7 @@ static void bind_all_listeners(void)
 {
 	struct ocp_sock *s;
 	struct sockaddr_in sock;
+	struct sockaddr_in6 sock6;
 
 	for (s = ocp_sock_bind_list; s; s = s->next) {
 		if (!s->listen_cb)
@@ -815,7 +818,19 @@ static void bind_all_listeners(void)
 			s, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1,
 			(struct sockaddr *)&sock, sizeof(sock));
 		if (!s->listener)
-			die("can't set up listener on port %d/tcp\n", s->lport);
+			die("can't set up IPv4 listener on port %d/tcp\n", s->lport);
+
+		memset(&sock6, 0, sizeof(sock6));
+		sock6.sin6_family = AF_INET6;
+		sock6.sin6_port = htons(s->lport);
+		sock6.sin6_addr = allow_remote ? in6addr_any : in6addr_loopback;
+
+		s->listener6 = evconnlistener_new_bind(event_base, s->listen_cb,
+			s, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1,
+			(struct sockaddr *)&sock6, sizeof(sock6));
+		if (!s->listener6)
+			die("can't set up IPv6 listener on port %d/tcp\n", s->lport);
+
 	}
 }
 
@@ -862,6 +877,7 @@ bad:
 
 static struct option longopts[] = {
 	{ "ip",			1,	NULL,	'I' },
+	{ "ip6",		1,	NULL,	'J' },
 	{ "mtu",		1,	NULL,	'M' },
 	{ "dns",		1,	NULL,	'd' },
 	{ "domain",		1,	NULL,	'o' },
@@ -878,8 +894,9 @@ int main(int argc, char **argv)
 {
 	int opt, i, vpnfd;
 	char *str;
-	char *ip_str, *mtu_str, *dns_str;
+	char *ip_str, *mtu_str, *ip6_str, *dns_str, *dns6_str;
 	ip_addr_t ip, netmask, gw, dns;
+	ip6_addr_t ip6, netmask6, gw6;
 	struct ocp_sock *s;
 	struct netif netif;
 
@@ -902,7 +919,6 @@ int main(int argc, char **argv)
 	ip_str = getenv("INTERNAL_IP4_ADDRESS");
 	mtu_str = getenv("INTERNAL_IP4_MTU");
 
-	dns_domain = getenv("CISCO_DEF_DOMAIN");
 	str = getenv("INTERNAL_IP4_DNS");
 	if (str) {
 		char *p;
@@ -914,12 +930,19 @@ int main(int argc, char **argv)
 			*p = 0;
 	}
 
+	ip6_str = getenv("INTERNAL_IP6_ADDRESS");
+
+	dns_domain = getenv("CISCO_DEF_DOMAIN");
+
 	/* override with command line options */
 	while ((opt = getopt_long(argc, argv,
-				  "I:M:d:o:D:k:gL:vT", longopts, NULL)) != -1) {
+				  "I:J:M:d:o:D:k:gL:vT", longopts, NULL)) != -1) {
 		switch (opt) {
 		case 'I':
 			ip_str = optarg;
+			break;
+		case 'J':
+			ip6_str = optarg;
 			break;
 		case 'M':
 			mtu_str = optarg;
@@ -956,11 +979,20 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!ip_str || !mtu_str)
-		die("missing -I or -M\n");
+	if (!mtu_str)
+		die("missing -M\n");
 
-	if (!ipaddr_aton(ip_str, &ip))
-		die("Invalid IP address: '%s'\n", ip_str);
+	if (!ip_str && !ip6_str)
+		die("neither -I nor -J\n");
+
+	if (ip_str) {
+		if (!ipaddr_aton(ip_str, &ip))
+			die("Invalid IPv4 address: '%s'\n", ip_str);
+	} else
+		ip_addr_set_zero(&ip);
+
+	if (ip6_str && !ip6addr_aton(ip6_str, &ip6))
+		die("Invalid IPv6 address: '%s'\n", ip6_str);
 
 	/* Debugging help. */
 	signal(SIGHUP, handle_sig);
@@ -979,10 +1011,12 @@ int main(int argc, char **argv)
 
 	if (dns_str) {
 		if (!ipaddr_aton(dns_str, &dns))
-			die("Invalid DNS IP: '%s'\n", dns_str);
+			die("Invalid DNS IPv4: '%s'\n", dns_str);
 		/* this replaces the default opendns server */
 		dns_setserver(0, &dns);
 	}
+
+	/* XXX dme: IPv6 DNS server (INTERNAL_IP6_DNS) is ignored. */
 
 	ip_addr_set_zero(&netmask);
 	ip_addr_set_zero(&gw);
@@ -991,6 +1025,11 @@ int main(int argc, char **argv)
 
 	netif_set_default(&netif);
 	netif_set_up(&netif);
+
+	if (ip6_str) {
+		ip6_addr_copy(netif.ip6_addr[0], ip6);
+		netif_ip6_addr_set_state(&netif, 0, IP6_ADDR_PREFERRED);
+	}
 
 	/* bind after all options have been parsed (especially -g) */
 	bind_all_listeners();

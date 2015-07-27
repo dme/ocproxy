@@ -82,6 +82,13 @@ LWIP_SOURCES		:= \
 			   lwip/src/core/ipv4/ip4.c \
 			   lwip/src/core/ipv4/ip4_addr.c \
 			   lwip/src/core/ipv4/ip_frag.c \
+			   lwip/src/core/ipv6/icmp6.c \
+			   lwip/src/core/ipv6/inet6.c \
+			   lwip/src/core/ipv6/ip6.c \
+			   lwip/src/core/ipv6/ip6_addr.c \
+			   lwip/src/core/ipv6/ip6_frag.c \
+			   lwip/src/core/ipv6/mld6.c \
+			   lwip/src/core/ipv6/nd6.c \
 			   lwip/src/api/api_lib.c \
 			   lwip/src/api/api_msg.c \
 			   lwip/src/api/err.c \
